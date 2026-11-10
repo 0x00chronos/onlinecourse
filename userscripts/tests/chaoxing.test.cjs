@@ -39,6 +39,25 @@ test('legacy: extract course, user, questions and visible correct answers, not m
   dom.window.close();
 });
 
+test('work page: extract the top-left course header rather than the assignment title', () => {
+  const dom = fixture();
+  const doc = dom.window.document;
+  doc.querySelector('.courseName').remove();
+  doc.body.insertAdjacentHTML('afterbegin', `
+    <div class="c-header"><div class="headerwrap">
+      <div class="c-menu">首页 任务 作业</div>
+      <h1><a href="/course/ai">人工智能</a></h1>
+      <span>课程评价</span>
+    </div></div>
+    <h1>2026年秋季人工智能</h1>
+  `);
+  assert(core.scan(doc).questions.every(question => question.context.courseName === '人工智能'));
+  doc.querySelector('.headerwrap h1').setAttribute('title', '人工智能基础');
+  doc.querySelector('.headerwrap h1 a').textContent = '人工智能…';
+  assert.equal(core.detectContext(doc).courseName, '人工智能基础');
+  dom.window.close();
+});
+
 test('modern: skip outer wrapper, parse reordered options and multiple correct answers', () => {
   const dom = fixture('modern');
   const result = core.scan(dom.window.document);

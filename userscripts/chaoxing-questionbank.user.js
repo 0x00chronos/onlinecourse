@@ -36,7 +36,7 @@
     options: [".stem_answer .answerBg", ".answerBg", "ul.Zy_ulTop > li", "ul li:has(label.after)", ".option-item"],
     optionText: [".answer_p", "label.after", ".after", ".option-content", ".option-text", "a"],
     correctAnswer: [".correctAnswer .answerCon", ".correctAnswer", ".Py_answer > span", ".Py_answer", ".correct-answer", ".rightAnswer"],
-    courseName: ["#courseName", "#coursename", ".courseName", ".course-name", ".course_name", "input[name='courseName']"],
+    courseName: [".c-header .headerwrap h1", "#courseName", "#coursename", ".courseName", ".course-name", ".course_name", "input[name='courseName']"],
     username: ["#currentUserName", "#userName", ".userName", ".username", ".user-name", ".userInfo .name", ".head_name", "[data-user-name]"],
   };
   const TYPE_SELECTOR = "input[id^='answertype'],input[name^='answertype'],input[name^='type']:not([name='type']),[data-question-type]";
