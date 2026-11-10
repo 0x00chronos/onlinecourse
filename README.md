@@ -83,6 +83,8 @@ bash scripts/docker-smoke.sh onlinecourse:local
 
 工作流位于 [`.github/workflows/docker.yml`](.github/workflows/docker.yml)：
 
+应用测试通过后，AMD64 和 ARM64 分别在 GitHub 原生 runner 上构建并执行容器测试；两者全部成功后，才合并并发布带版本标签的双架构镜像。各架构独立缓存构建层，避免 QEMU 模拟编译的开销。
+
 | 触发方式 | 行为 | 镜像标签 |
 | --- | --- | --- |
 | 推送 `main` | 测试通过后构建双架构镜像并推送 GHCR | `latest`、`main`、`sha-xxxxxxx` |

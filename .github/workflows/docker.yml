@@ -18,7 +18,7 @@ concurrency:
 jobs:
   test:
     name: Tests and container smoke test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -52,12 +52,22 @@ jobs:
       - name: Container smoke test
         run: bash scripts/docker-smoke.sh onlinecourse:test
 
-  publish:
-    name: Publish multi-platform image to GHCR
+  publish-platform:
+    name: Publish ${{ matrix.arch }} image
     needs: test
     if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            cache: onlinecourse
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            cache: onlinecourse-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
@@ -68,9 +78,66 @@ jobs:
         env:
           REPOSITORY: ${{ github.repository }}
         run: echo "name=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - name: Build native test image
+        uses: docker/build-push-action@v7
         with:
-          platforms: arm64
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          tags: onlinecourse:test
+          cache-from: type=gha,scope=${{ matrix.cache }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.cache }}
+      - name: Test native container
+        run: bash scripts/docker-smoke.sh onlinecourse:test
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push platform image by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=image,name=${{ steps.image.outputs.name }},push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.cache }}
+      - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    name: Publish multi-platform manifest
+    needs: publish-platform
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Set lowercase image name
+        id: image
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: echo "name=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digest-*
+          merge-multiple: true
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
@@ -89,27 +156,33 @@ jobs:
             type=sha
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-      - name: Build and push
-        id: build
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=onlinecourse
-          cache-to: type=gha,mode=max,scope=onlinecourse
+      - name: Merge and publish manifest
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          METADATA: ${{ steps.meta.outputs.json }}
+        run: |
+          set -euo pipefail
+          mapfile -t tags < <(jq -r '.tags[]' <<< "$METADATA")
+          args=()
+          for tag in "${tags[@]}"; do args+=(--tag "$tag"); done
+          images=()
+          for digest in *; do
+            [[ "$digest" =~ ^[a-f0-9]{64}$ ]]
+            images+=("$IMAGE@sha256:$digest")
+          done
+          test "${#images[@]}" -eq 2
+          docker buildx imagetools create "${args[@]}" "${images[@]}"
+          docker buildx imagetools inspect "${tags[0]}"
       - name: Publish summary
         env:
           IMAGE: ${{ steps.image.outputs.name }}
-          DIGEST: ${{ steps.build.outputs.digest }}
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           {
             echo '### Published container image'
+            echo "Image: $IMAGE"
             echo "Platforms: linux/amd64, linux/arm64"
-            echo "Digest: \`$IMAGE@$DIGEST\`"
             echo '```text'
             echo "$TAGS"
             echo '```'
