@@ -12,7 +12,7 @@
 // @match        *://*/exam/*
 // @connect      127.0.0.1
 // @connect      localhost
-// @connect      *.chronos.icu
+// @connect      chronos.icu
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_xmlhttpRequest
