@@ -1,0 +1,29 @@
+# 本地实验默认配置。相对 SQLite 路径以此配置文件所在目录为基准。
+server:
+  address: "127.0.0.1:8080"
+  read_timeout_seconds: 15
+  write_timeout_seconds: 30
+  shutdown_timeout_seconds: 10
+  max_body_bytes: 2097152
+  # 必填：所有 /api/v1/* 接口均须携带 Authorization: Bearer <token>。
+  # 此值仅用于本地实验；对外使用前请替换为随机 Token，并同步到前端和油猴。
+  api_key: "local-dev-token-change-me"
+  # GM_xmlhttpRequest 通常不受浏览器 CORS 限制；普通 fetch 需要加入实际页面 Origin。
+  allowed_origins: []
+
+database:
+  driver: sqlite # sqlite | mysql | postgres（也接受 pgsql）
+  sqlite:
+    path: "data/questionbank.db"
+  mysql:
+    dsn: "questionbank:password@tcp(127.0.0.1:3306)/questionbank?charset=utf8mb4&parseTime=True&loc=UTC"
+  postgres:
+    dsn: "host=127.0.0.1 port=5432 user=questionbank password=password dbname=questionbank sslmode=disable TimeZone=UTC"
+  max_open_conns: 10
+  max_idle_conns: 5
+  conn_max_lifetime_seconds: 3600
+  slow_query_ms: 200
+
+log:
+  level: info # debug | info | warn | error
+  format: text # text | json

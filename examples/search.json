@@ -1,0 +1,6 @@
+{
+  "course_id": 1,
+  "type": "single",
+  "stem": "Go 声明函数的关键字是？",
+  "options": [{"key": "A", "text": "function"}, {"key": "B", "text": "func"}]
+}

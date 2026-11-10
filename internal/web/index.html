@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>题库档案 · 课程与答案查询</title>
+  <meta name="description" content="按课程查阅单选、多选题与参考答案，保留每一份贡献的来源。">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/app.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">跳至主要内容</a>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="题库档案首页">
+      <span class="brand-icon" aria-hidden="true">册</span>
+      <span>题库档案<small>COURSE BANK</small></span>
+    </a>
+    <div class="topbar-right">
+      <span id="connection-label" class="connection"><i></i><span id="connection-text">等待认证</span></span>
+      <button id="logout" class="button button-quiet" type="button" hidden>退出</button>
+    </div>
+  </header>
+
+  <main id="main-content">
+    <section id="login-view" class="login-layout" aria-labelledby="login-title">
+      <div class="welcome-panel">
+        <span class="eyebrow">YOUR KNOWLEDGE, ORGANIZED.</span>
+        <h1>课程题库，<br>集中查阅。</h1>
+        <p>从课程找到题目，从答案追溯来源。<br>让每一份分享，都被看见。</p>
+        <div class="archive-art" aria-hidden="true">
+          <div class="archive-line"><span>01</span><strong>课程归档</strong><em>COURSES</em></div>
+          <div class="archive-line"><span>02</span><strong>题目与答案</strong><em>QUESTIONS</em></div>
+          <div class="archive-line"><span>03</span><strong>贡献与来源</strong><em>CONTRIBUTIONS</em></div>
+        </div>
+        <div class="welcome-footer"><span class="dot"></span>单选与多选题库 · 来源可追溯</div>
+      </div>
+      <div class="login-panel">
+        <span class="section-label">访问认证</span>
+        <h2 id="login-title">连接你的题库</h2>
+        <p class="muted login-description">输入服务端配置的访问 Token，开始查阅课程和答案。</p>
+        <form id="login-form" method="post">
+          <label for="token">访问 Token</label>
+          <div class="token-field">
+            <input id="token" type="password" placeholder="输入访问 Token" autocomplete="off" spellcheck="false" required>
+            <button id="toggle-token" class="field-button" type="button" aria-label="显示 Token" aria-pressed="false">显示</button>
+          </div>
+          <p class="field-help">Token 仅在当前标签页会话中保留，退出后清除。</p>
+          <p id="login-error" class="form-error" role="alert" hidden></p>
+          <button id="login-submit" class="button button-primary login-submit" type="submit">进入题库 <span aria-hidden="true">→</span></button>
+        </form>
+        <p class="login-note">此页面与服务端使用同一个访问 Token。<br>请向服务维护者获取。<br><a href="/userscripts/chaoxing-questionbank.user.js">安装超星采集与填写脚本 ↗</a></p>
+      </div>
+    </section>
+
+    <section id="app-view" class="workspace" aria-label="课程题库查询" hidden>
+      <aside class="course-panel" aria-labelledby="courses-title">
+        <div class="sidebar-heading"><div><span class="section-label">LIBRARY</span><h2 id="courses-title">我的课程</h2></div><span id="course-count" class="count-badge">0</span></div>
+        <form id="course-search-form" class="course-search" role="search" aria-label="搜索课程">
+          <label class="sr-only" for="course-search">课程名称</label>
+          <input id="course-search" type="search" placeholder="搜索课程名称…" maxlength="500">
+          <button class="search-submit" type="submit" aria-label="搜索课程">↵</button>
+        </form>
+        <p id="course-status" class="sidebar-caption" role="status">正在读取课程…</p>
+        <div id="course-list" class="course-list"></div>
+        <div class="sidebar-pagination">
+          <button id="courses-prev" class="button button-small" type="button" aria-label="上一页课程">←</button>
+          <span id="courses-page" class="muted">1 / 1</span>
+          <button id="courses-next" class="button button-small" type="button" aria-label="下一页课程">→</button>
+        </div>
+        <div class="sidebar-footnote"><span class="mini-icon" aria-hidden="true">↳</span><p>每一份答案都有来处。<br>查看题目中的贡献者记录。</p></div>
+      </aside>
+
+      <div class="question-panel">
+        <div class="breadcrumb">课程档案 <span aria-hidden="true">/</span> <span id="breadcrumb-course">选择课程</span></div>
+        <div class="page-heading"><div><h1 id="course-title">选择一门课程</h1><p id="course-meta" class="muted">从左侧选择课程，查阅题库与参考答案。</p></div><button id="refresh" class="button" type="button"><span aria-hidden="true">↻</span> 刷新</button></div>
+        <div id="app-error" class="notice notice-error" role="alert" hidden></div>
+        <section class="question-library" aria-labelledby="questions-title">
+          <div class="library-heading"><div class="library-title"><h2 id="questions-title">课程题库</h2><span id="question-total" class="count-badge">0</span></div><span class="library-hint">保留原始贡献 · 答案供参考</span></div>
+          <form id="question-search-form" class="question-filters" role="search" aria-label="搜索当前课程题目">
+            <div class="search-field"><label class="sr-only" for="question-search">题干关键字</label><span aria-hidden="true">⌕</span><input id="question-search" type="search" placeholder="搜索这门课程中的题目…" maxlength="500"></div>
+            <label class="sr-only" for="question-type">题目类型</label>
+            <select id="question-type"><option value="">全部题型</option><option value="single">单选题</option><option value="multiple">多选题</option></select>
+            <button class="button button-primary" type="submit">查询</button>
+          </form>
+          <div id="question-status" class="results-caption" role="status"></div>
+          <div id="question-list" class="question-list"></div>
+          <div id="questions-pagination" class="questions-pagination" hidden><span id="questions-range" class="muted"></span><div><button id="questions-prev" class="button button-small" type="button">上一页</button><span id="questions-page" class="page-number"></span><button id="questions-next" class="button button-small" type="button">下一页</button></div></div>
+        </section>
+        <footer class="workspace-footer">题库档案 <span>·</span> 知识共享，感谢每一位贡献者。<br><a href="/userscripts/chaoxing-questionbank.user.js">安装超星采集与填写脚本 ↗</a></footer>
+      </div>
+    </section>
+  </main>
+  <noscript><p class="noscript">请启用 JavaScript 以使用题库查询页面。</p></noscript>
+</body>
+</html>

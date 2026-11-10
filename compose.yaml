@@ -1,0 +1,32 @@
+services:
+  questionbank:
+    image: ${IMAGE:-onlinecourse:local}
+    build:
+      context: .
+    restart: unless-stopped
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-8080}:8080"
+    volumes:
+      - type: bind
+        source: ./config.local.yaml
+        target: /app/config/config.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+      - questionbank-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  questionbank-data:

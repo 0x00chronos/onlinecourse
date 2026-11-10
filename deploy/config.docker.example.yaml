@@ -1,0 +1,14 @@
+# Copy to config.local.yaml and set a random API token before starting.
+server:
+  address: "0.0.0.0:8080"
+  api_key: ""
+  allowed_origins: []
+
+database:
+  driver: sqlite
+  sqlite:
+    path: "/app/data/questionbank.db"
+
+log:
+  level: info
+  format: json

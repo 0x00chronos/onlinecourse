@@ -1,0 +1,26 @@
+{
+  "course_id": 1,
+  "contributor": {
+    "username": "小明",
+    "source_url": "https://course.example/quiz/1"
+  },
+  "questions": [
+    {
+      "type": "single",
+      "stem": "Go 声明函数的关键字是？",
+      "options": [{"key": "A", "text": "func"}, {"key": "B", "text": "function"}],
+      "correct_answers": ["A"]
+    },
+    {
+      "type": "multiple",
+      "stem": "以下哪些是 Go 的内置类型？",
+      "options": [{"key": "A", "text": "int"}, {"key": "B", "text": "string"}, {"key": "C", "text": "varchar"}],
+      "correct_answers": ["A", "B"]
+    },
+    {
+      "type": "single",
+      "stem": "Go 是否支持垃圾回收？",
+      "options": [{"key": "A", "text": "支持"}, {"key": "B", "text": "不支持"}]
+    }
+  ]
+}

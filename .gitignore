@@ -1,0 +1,14 @@
+/data/
+/bin/
+*.db
+*.db-shm
+*.db-wal
+/config.local.yaml
+coverage.out
+/node_modules/
+.DS_Store
+.env
+.env.*
+!.env.example
+*.pem
+*.key

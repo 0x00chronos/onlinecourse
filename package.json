@@ -1,0 +1,13 @@
+{
+  "name": "onlinecourse-userscript-tests",
+  "private": true,
+  "description": "Local DOM fixture tests for the standalone Chaoxing userscript; no runtime frontend build required.",
+  "scripts": {
+    "test": "node --test userscripts/tests/*.test.cjs",
+    "test:userscript": "node --test userscripts/tests/*.test.cjs",
+    "test:userscript:integration": "node userscripts/tests/integration.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "^31.0.0"
+  }
+}
