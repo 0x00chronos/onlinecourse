@@ -46,15 +46,33 @@ test('work page: extract the top-left course header rather than the assignment t
   doc.body.insertAdjacentHTML('afterbegin', `
     <div class="c-header"><div class="headerwrap">
       <div class="c-menu">首页 任务 作业</div>
-      <h1><a href="/course/ai">人工智能</a></h1>
-      <span>课程评价</span>
+      <h1><a href="/course/ai">人工智能</a> <a href="/course/evaluate"><span>课程评价</span></a></h1>
     </div></div>
     <h1>2026年秋季人工智能</h1>
   `);
   assert(core.scan(doc).questions.every(question => question.context.courseName === '人工智能'));
+  assert.equal(doc.querySelector('.headerwrap h1 a:last-child').textContent, '课程评价');
   doc.querySelector('.headerwrap h1').setAttribute('title', '人工智能基础');
   doc.querySelector('.headerwrap h1 a').textContent = '人工智能…';
   assert.equal(core.detectContext(doc).courseName, '人工智能基础');
+  dom.window.close();
+});
+
+test('course header: exclude evaluation controls while preserving the actual course name', () => {
+  const dom = fixture();
+  const doc = dom.window.document;
+  doc.body.insertAdjacentHTML('afterbegin', '<div class="c-header"><div class="headerwrap"><h1></h1></div></div>');
+  const heading = doc.querySelector('.headerwrap h1');
+  for (const markup of [
+    '人工智能 <a href="/evaluate">课程评价</a>',
+    '<span>人工智能</span> <button>课程评价</button>',
+    '<a href="/course/ai">人工智能</a> <span role="button">课程评价</span>',
+  ]) {
+    heading.innerHTML = markup;
+    assert.equal(core.detectContext(doc).courseName, '人工智能');
+  }
+  heading.innerHTML = '<a href="/course/evaluation">课程评价方法</a> <a href="/evaluate">课程评价</a>';
+  assert.equal(core.detectContext(doc).courseName, '课程评价方法');
   dom.window.close();
 });
 

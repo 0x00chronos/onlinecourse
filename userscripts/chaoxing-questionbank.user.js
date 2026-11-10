@@ -111,6 +111,16 @@
   function readNode(node) {
     return normalize(node?.getAttribute("data-user-name") || node?.value || node?.getAttribute("title") || text(node));
   }
+  function readCourseName(node) {
+    if (node?.matches(".c-header .headerwrap h1")) {
+      node = node.cloneNode(true);
+      // The course heading also contains a separate course-evaluation control.
+      node.querySelectorAll("a,button,[role='button']").forEach((control) => {
+        if (normalize(control.textContent) === "课程评价") control.remove();
+      });
+    }
+    return readNode(node);
+  }
   function detectContext(doc, allDocuments = [doc], custom = {}) {
     const docs = [doc, ...allDocuments.filter((item) => item !== doc)];
     let externalID = "", courseName = "", username = "";
@@ -121,7 +131,7 @@
         if (!externalID) externalID = readNode(first(current, ["#courseId", "#courseid", "input[name='courseId']", "input[name='courseid']"])) || "";
         if (!externalID) externalID = current.querySelector("[data-course-id]")?.getAttribute("data-course-id") || "";
       }
-      if (!courseName) courseName = readNode(first(current, selectorList(custom, "courseName")));
+      if (!courseName) courseName = readCourseName(first(current, selectorList(custom, "courseName")));
     }
     // Header/user controls on the outer page are preferred over question markup.
     for (const current of allDocuments) {
