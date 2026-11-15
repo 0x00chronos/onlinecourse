@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星 MOOC · 私有题库采集与填写
 // @namespace    onlinecourse.local
-// @version      0.2.0
+// @version      0.2.1
 // @description  单选/多选/判断题采集、可见正确答案上传、私有题库查询与填写，保留贡献者鸣谢。
 // @match        *://*.chaoxing.com/*
 // @match        *://*/mycourse/*
@@ -27,7 +27,7 @@
 // https://github.com/ltxhhz/getChaoXingTopic/blob/master/export2.js
 (() => {
   "use strict";
-  const VERSION = "0.2.0";
+  const VERSION = "0.2.1";
   const TYPE_NAMES = { single: "单选", multiple: "多选", judgement: "判断" };
   const HOST_ID = "onlinecourse-chaoxing-panel";
   const STORAGE_KEY = "onlinecourse-chaoxing-v1";
@@ -154,7 +154,7 @@
       const value = normalize(metadata.value || metadata.getAttribute("data-question-type"));
       if (["0", "single", "单选题"].includes(value)) return "single";
       if (["1", "multiple", "多选题"].includes(value)) return "multiple";
-      if (["2", "judgement", "judgment", "判断题"].includes(value)) return "judgement";
+      if (["3", "judgement", "judgment", "判断题"].includes(value)) return "judgement";
       if (value !== "") return null;
     }
     const heading = normalize(text(first(root, [".Zy_TItle", ".newZy_TItle", "h3", ".question-title"])));

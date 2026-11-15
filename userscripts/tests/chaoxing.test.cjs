@@ -151,7 +151,7 @@ test('unresponsive custom controls never report a successful fill', async () => 
 
 test('unsupported type, duplicate options, images and obfuscated fonts are diagnosed', () => {
   for (const modify of [
-    doc => { doc.querySelector('#answertype11').value = '3'; },
+    doc => { doc.querySelector('#answertype11').value = '2'; },
     doc => { doc.querySelector('#q11b').closest('li').querySelector('.after').textContent = 'func'; },
     doc => { doc.querySelector('#question11 .fontLabel').appendChild(doc.createElement('img')); },
     doc => { doc.querySelector('#question11 .fontLabel').classList.add('font-cxsecret'); },
@@ -267,5 +267,31 @@ test('judgement: parse aliases, collect correct answers and fill native/custom c
   assert.deepEqual(no.options.map(core.selected), [false, true]);
   const bad = resultFor(no, ['A', 'B']);
   await assert.rejects(core.fillQuestion(no, bad, { delay: 0 }), /不合法/);
+  dom.window.close();
+});
+
+test('a mixed paper recognizes ten choices followed by ten type-3 judgements without type labels', () => {
+  const dom = fixture('modern');
+  const judgement = fixture('judgement');
+  const doc = dom.window.document;
+  const choiceTemplate = doc.getElementById('modern-single').cloneNode(true);
+  const judgementTemplate = judgement.window.document.getElementById('judgement-false');
+  const container = doc.querySelector('.TiMu');
+  container.replaceChildren();
+  for (let index = 0; index < 20; index++) {
+    const template = index < 10 ? choiceTemplate : judgementTemplate;
+    const question = doc.importNode(template, true);
+    question.id = `question-${index + 1}`;
+    question.querySelector('input[type="hidden"]').name = `answertype${index + 1}`;
+    question.querySelector('.mark_name').textContent = `${index + 1}. 这是第 ${index + 1} 个测试陈述。`;
+    container.append(question);
+  }
+  const result = core.scan(doc);
+  assert.equal(result.questions.length, 20);
+  assert.deepEqual(result.issues, []);
+  assert(result.questions.slice(0, 10).every(question => question.type === 'single'));
+  assert(result.questions.slice(10).every(question => question.type === 'judgement'));
+  assert(result.questions.slice(10).every(question => question.correct_answers.join() === 'B'));
+  judgement.window.close();
   dom.window.close();
 });
