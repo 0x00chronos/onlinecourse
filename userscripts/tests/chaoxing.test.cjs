@@ -295,3 +295,46 @@ test('a mixed paper recognizes ten choices followed by ten type-3 judgements wit
   judgement.window.close();
   dom.window.close();
 });
+
+test('userscript automatically caches backend and Token inputs and restores them after reload', () => {
+  let saved = { interval: 700, selectors: { roots: '.TiMu' }, sites: { existing: { platform: '已保存的平台' } } };
+  let requests = 0;
+  function openPanel() {
+    const dom = fixture();
+    const window = dom.window;
+    let shadow;
+    const attach = window.Element.prototype.attachShadow;
+    window.Element.prototype.attachShadow = function(options) {
+      shadow = attach.call(this, options);
+      return shadow;
+    };
+    window.GM_getValue = () => structuredClone(saved);
+    window.GM_setValue = (key, value) => { saved = structuredClone(value); };
+    window.GM_xmlhttpRequest = () => { requests++; };
+    window.GM_registerMenuCommand = () => {};
+    window.GM_setClipboard = () => {};
+    window.console.info = () => {};
+    window.eval(fs.readFileSync(path.join(__dirname, '..', 'chaoxing-questionbank.user.js'), 'utf8'));
+    return { dom, window, address: shadow.querySelector('.fields input[type="text"]'), token: shadow.querySelector('input[type="password"]') };
+  }
+  const first = openPanel();
+  first.address.value = 'https://bank.example';
+  first.address.dispatchEvent(new first.window.Event('input', { bubbles: true }));
+  first.token.value = 'PERSISTENT-TEST-TOKEN';
+  first.token.dispatchEvent(new first.window.Event('input', { bubbles: true }));
+  assert.equal(saved.baseURL, 'https://bank.example');
+  assert.equal(saved.token, 'PERSISTENT-TEST-TOKEN');
+  assert.equal(saved.interval, 700);
+  assert.equal(saved.sites.existing.platform, '已保存的平台');
+  first.dom.window.close();
+
+  const reopened = openPanel();
+  assert.equal(reopened.address.value, 'https://bank.example');
+  assert.equal(reopened.token.value, 'PERSISTENT-TEST-TOKEN');
+  reopened.token.value = '';
+  reopened.token.dispatchEvent(new reopened.window.Event('change', { bubbles: true }));
+  assert.equal(saved.token, '');
+  assert.equal(saved.baseURL, 'https://bank.example');
+  assert.equal(requests, 0);
+  reopened.dom.window.close();
+});

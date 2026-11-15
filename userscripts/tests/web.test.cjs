@@ -16,7 +16,7 @@ async function waitFor(condition) {
   throw new Error('UI state did not update');
 }
 
-function queryPage(kind) {
+function queryPage(kind, options = {}) {
   const dom = new JSDOM(html, { url: 'https://bank.example/', runScripts: 'outside-only' });
   const window = dom.window;
   let question = {
@@ -26,14 +26,18 @@ function queryPage(kind) {
   };
   const writes = [];
   let rejectWrites = false;
-  window.fetch = async (url, options) => {
-    assert.equal(options.headers.Authorization, 'Bearer UI-TEST-TOKEN');
+  let offline = Boolean(options.offline);
+  if (options.localToken) window.localStorage.setItem('course-bank-token', options.localToken);
+  if (options.sessionToken) window.sessionStorage.setItem('course-bank-token', options.sessionToken);
+  window.fetch = async (url, request) => {
+    assert.equal(request.headers.Authorization, 'Bearer UI-TEST-TOKEN');
+    if (offline) throw new TypeError('Network unavailable');
     let data;
-    if (options.method === 'POST') {
+    if (request.method === 'POST') {
       assert.equal(url, '/api/v1/questions/batch');
-      assert.equal(options.headers['Content-Type'], 'application/json');
+      assert.equal(request.headers['Content-Type'], 'application/json');
       if (rejectWrites) return { ok: false, status: 401, json: async () => ({ error: { message: 'invalid Token' } }) };
-      const body = JSON.parse(options.body);
+      const body = JSON.parse(request.body);
       writes.push(body);
       const answers = body.questions[0].correct_answers;
       question = { ...question, has_answer: true, answer_candidates: [{ answer_keys: answers, answer_texts: answers.map(key => question.options.find(option => option.key === key).text), support_count: 1, contributors: [{ username: body.contributor.username, source_url: body.contributor.source_url }] }] };
@@ -45,9 +49,11 @@ function queryPage(kind) {
     return { ok: true, status: 200, json: async () => structuredClone(data) };
   };
   window.eval(script);
-  window.document.getElementById('token').value = 'UI-TEST-TOKEN';
-  window.document.getElementById('login-form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
-  return { dom, window, writes, rejectWrites() { rejectWrites = true; } };
+  if (options.login !== false) {
+    window.document.getElementById('token').value = 'UI-TEST-TOKEN';
+    window.document.getElementById('login-form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+  }
+  return { dom, window, writes, rejectWrites() { rejectWrites = true; }, setOffline(value) { offline = value; } };
 }
 
 for (const kind of ['single', 'multiple', 'judgement']) {
@@ -92,5 +98,42 @@ test('manual answer submission handles 401 by clearing the authenticated page', 
   await waitFor(() => doc.getElementById('app-view').hidden);
   assert.equal(doc.getElementById('question-list').children.length, 0);
   assert.equal(app.window.sessionStorage.getItem('course-bank-token'), null);
+  assert.equal(app.window.localStorage.getItem('course-bank-token'), null);
+  app.dom.window.close();
+});
+
+test('query UI remembers Token across a reopened page and logout removes cached credentials', async () => {
+  const first = queryPage('judgement');
+  await waitFor(() => first.window.document.querySelector('.manual-answer-form'));
+  const saved = first.window.localStorage.getItem('course-bank-token');
+  assert.equal(saved, 'UI-TEST-TOKEN');
+  first.dom.window.close();
+
+  const reopened = queryPage('judgement', { localToken: saved, login: false });
+  await waitFor(() => reopened.window.document.querySelector('.manual-answer-form'));
+  assert.equal(reopened.window.document.getElementById('app-view').hidden, false);
+  reopened.window.document.getElementById('logout').click();
+  assert.equal(reopened.window.localStorage.getItem('course-bank-token'), null);
+  assert.equal(reopened.window.sessionStorage.getItem('course-bank-token'), null);
+  reopened.dom.window.close();
+});
+
+test('query UI migrates an older tab session Token into persistent storage', async () => {
+  const app = queryPage('single', { sessionToken: 'UI-TEST-TOKEN', login: false });
+  await waitFor(() => app.window.document.querySelector('.manual-answer-form'));
+  assert.equal(app.window.localStorage.getItem('course-bank-token'), 'UI-TEST-TOKEN');
+  assert.equal(app.window.sessionStorage.getItem('course-bank-token'), null);
+  app.dom.window.close();
+});
+
+test('a temporary connection failure keeps cached Token for retry without retyping', async () => {
+  const app = queryPage('single', { localToken: 'UI-TEST-TOKEN', login: false, offline: true });
+  const doc = app.window.document;
+  await waitFor(() => !doc.getElementById('login-error').hidden);
+  assert.equal(app.window.localStorage.getItem('course-bank-token'), 'UI-TEST-TOKEN');
+  assert.equal(doc.getElementById('token').value, 'UI-TEST-TOKEN');
+  app.setOffline(false);
+  doc.getElementById('login-form').dispatchEvent(new app.window.Event('submit', { bubbles: true, cancelable: true }));
+  await waitFor(() => doc.querySelector('.manual-answer-form'));
   app.dom.window.close();
 });

@@ -1,7 +1,7 @@
 "use strict";
 
 (() => {
-  const SESSION_KEY = "course-bank-token";
+  const TOKEN_KEY = "course-bank-token";
   const COURSE_SIZE = 10;
   const QUESTION_SIZE = 20;
   const $ = (id) => document.getElementById(id);
@@ -20,15 +20,29 @@
     return node;
   }
 
-  function sessionToken(value) {
-    try {
-      if (value === undefined) return sessionStorage.getItem(SESSION_KEY) || "";
-      if (value) sessionStorage.setItem(SESSION_KEY, value);
-      else sessionStorage.removeItem(SESSION_KEY);
-    } catch {
-      // Private browsing/storage restrictions should not prevent in-memory login.
+  function cachedToken(value) {
+    if (value === undefined) {
+      for (const name of ["localStorage", "sessionStorage"]) {
+        try {
+          const saved = window[name].getItem(TOKEN_KEY);
+          if (saved) return saved;
+        } catch { /* Continue with the other browser storage. */ }
+      }
+      return "";
     }
-    return "";
+    if (!value) {
+      for (const name of ["localStorage", "sessionStorage"]) {
+        try { window[name].removeItem(TOKEN_KEY); } catch { /* Storage can be disabled. */ }
+      }
+      return;
+    }
+    try {
+      localStorage.setItem(TOKEN_KEY, value);
+      // Migrate credentials previously kept only in this tab.
+      try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* Local cache is already saved. */ }
+    } catch {
+      try { sessionStorage.setItem(TOKEN_KEY, value); } catch { /* Keep the current login in memory. */ }
+    }
   }
 
   function alertMessage(id, message = "") {
@@ -41,7 +55,8 @@
     return error.message || "读取失败，请稍后重试。";
   }
 
-  function lock(message = "") {
+  function lock(message = "", clearCachedToken = true) {
+    const retainedToken = clearCachedToken ? "" : state.token || cachedToken();
     state.courseSequence++;
     state.questionSequence++;
     state.courseRequest?.abort();
@@ -54,7 +69,7 @@
     state.token = "";
     state.selected = null;
     state.courses = [];
-    sessionToken("");
+    if (clearCachedToken) cachedToken("");
     $("app-view").hidden = true;
     $("login-view").hidden = false;
     $("logout").hidden = true;
@@ -62,7 +77,7 @@
     $("connection-text").textContent = "等待认证";
     $("course-list").replaceChildren();
     $("question-list").replaceChildren();
-    $("token").value = "";
+    $("token").value = retainedToken;
     $("token").type = "password";
     $("toggle-token").textContent = "显示";
     $("toggle-token").setAttribute("aria-pressed", "false");
@@ -482,7 +497,7 @@
     try {
       // A protected data request verifies the Token before revealing the workspace.
       await api("/courses?page=1&page_size=1");
-      sessionToken(token);
+      cachedToken(token);
       $("token").value = "";
       $("login-view").hidden = true;
       $("app-view").hidden = false;
@@ -495,7 +510,7 @@
       $("course-search").focus();
       await loadCourses();
     } catch (error) {
-      if (error.status !== 401) lock(errorMessage(error));
+      if (error.status !== 401) lock(errorMessage(error), false);
     } finally {
       $("login-submit").disabled = false;
       $("login-submit").replaceChildren(document.createTextNode("进入题库 "), element("span", "", "→"));
@@ -537,6 +552,6 @@
     loadCourses();
   });
 
-  const saved = sessionToken();
+  const saved = cachedToken();
   if (saved) connect(saved);
 })();

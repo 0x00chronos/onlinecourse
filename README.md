@@ -120,9 +120,9 @@ Authorization: Bearer <server.api_key 的值>
 - 每道题可点击“设置答案”，选择正确选项并填写贡献者署名后保存。单选和判断题选择一项，多选题选择多项。保存会新增一条贡献记录，出现不同答案时显示冲突供核对。写入请求同样携带 Token，来源链接记录为题库页面及题目 ID。
 - 支持手机窄屏、加载状态、空数据提示、错误提示和手动刷新。
 
-页面使用 [Fetch](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch) 自动发送 Bearer Token。Token 仅保留在当前标签页的 `sessionStorage`；退出或收到 401 时清除 Token 和页面数据。浏览器禁止存储时仍可在内存中使用，刷新后需要重新输入。Token 不会写入静态资源、URL、请求日志或长期 `localStorage`。
+页面使用 [Fetch](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch) 自动发送 Bearer Token。登录成功后将 Token 保存到本机 `localStorage`，刷新页面或重新打开浏览器时自动恢复登录。旧版标签页的 `sessionStorage` Token 会自动迁移。退出或收到 401 时清除缓存和页面数据，临时网络故障时保留缓存供重试。浏览器限制本地存储时会尝试标签页存储，两者都禁止时本次登录保留在内存中。
 
-这是配置式共享 Token 认证，没有用户帐号、JWT 签发或刷新机制。更换配置中的 Token 并重启服务即可使旧 Token 失效；页面“退出”清除当前标签页凭据，不吊销其他客户端的 Token。贡献者用户名仍由上传脚本提供。
+这是配置式共享 Token 认证，没有用户帐号、JWT 签发或刷新机制。更换配置中的 Token 并重启服务即可使旧 Token 失效；页面“退出”清除本机缓存和当前页面凭据，不吊销其他客户端的 Token。贡献者用户名仍由上传脚本提供。
 
 下方 curl 示例使用默认实验 Token。如已修改配置，请同步替换请求头。
 

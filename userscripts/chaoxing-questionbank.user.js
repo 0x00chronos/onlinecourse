@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星 MOOC · 私有题库采集与填写
 // @namespace    onlinecourse.local
-// @version      0.2.1
+// @version      0.2.2
 // @description  单选/多选/判断题采集、可见正确答案上传、私有题库查询与填写，保留贡献者鸣谢。
 // @match        *://*.chaoxing.com/*
 // @match        *://*/mycourse/*
@@ -27,7 +27,7 @@
 // https://github.com/ltxhhz/getChaoXingTopic/blob/master/export2.js
 (() => {
   "use strict";
-  const VERSION = "0.2.1";
+  const VERSION = "0.2.2";
   const TYPE_NAMES = { single: "单选", multiple: "多选", judgement: "判断" };
   const HOST_ID = "onlinecourse-chaoxing-panel";
   const STORAGE_KEY = "onlinecourse-chaoxing-v1";
@@ -462,6 +462,8 @@
     const courseOverride = stored.courses?.[courseScope] || {};
     field("baseURL", "后端地址（不要包含 /api/v1）", stored.baseURL || "http://127.0.0.1:8080");
     field("token", "访问 Token（保存于油猴扩展存储）", stored.token, "password");
+    const connectionStatus = el("p", stored.token ? "已读取本机保存的连接配置。" : "后端地址和 Token 会自动保存到本机。", "hint");
+    fields.append(connectionStatus);
     field("platform", "平台标识（采集页与填写页保持一致）", site.platform || `超星MOOC@${origin}`);
     field("courseName", "课程名称", courseOverride.name || detected.courseName);
     field("externalID", "平台课程 ID", courseOverride.externalID || detected.externalID);
@@ -516,6 +518,27 @@
       const interval = Number(inputs.interval.value);
       if (!Number.isInteger(interval) || interval < 0 || interval > 5000) fail("题目间隔必须是 0–5000 的整数");
       return { ...config, interval, overwrite: overwrite.checked, selectors: validateSelectors(selectorInput.value, doc) };
+    }
+    function cacheConnection() {
+      try {
+        const latest = GM_getValue(STORAGE_KEY, {}) || {};
+        const baseURL = inputs.baseURL.value.trim();
+        const token = inputs.token.value.trim();
+        if (latest.baseURL !== baseURL || latest.token !== token) {
+          GM_setValue(STORAGE_KEY, { ...latest, baseURL, token });
+        }
+        stored.baseURL = baseURL;
+        stored.token = token;
+        connectionStatus.textContent = "后端地址和 Token 已自动保存到本机。";
+        connectionStatus.className = "hint";
+      } catch {
+        connectionStatus.textContent = "本地保存失败，请检查油猴存储权限。";
+        connectionStatus.className = "error";
+      }
+    }
+    for (const input of [inputs.baseURL, inputs.token]) {
+      input.addEventListener("input", cacheConnection);
+      input.addEventListener("change", cacheConnection);
     }
     function metadata(needsUsername) {
       const value = { platform: normalize(inputs.platform.value), external_id: normalize(inputs.externalID.value), name: normalize(inputs.courseName.value), username: normalize(inputs.username.value) };
@@ -581,6 +604,7 @@
       if (busy) return;
       try {
         const config = readSettings();
+        cacheConnection();
         const questions = refresh();
         const meta = metadata(action === "upload");
         if (!questions.length) fail("未识别到题目，请等待页面加载或调整高级选择器");
