@@ -268,6 +268,7 @@ func (a *API) handleError(w http.ResponseWriter, r *http.Request, err error) {
 	var validation *bank.ValidationError
 	switch {
 	case errors.As(err, &validation):
+		a.log.WarnContext(r.Context(), "请求参数校验失败", "component", "validation", "request_id", requestID(r), "reason", validation.Message)
 		a.fail(w, r, 400, "validation_error", validation.Message)
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		a.fail(w, r, 404, "not_found", "课程或题目不存在")

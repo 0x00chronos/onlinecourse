@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星 MOOC · 私有题库采集与填写
 // @namespace    onlinecourse.local
-// @version      0.2.2
+// @version      0.2.3
 // @description  单选/多选/判断题采集、可见正确答案上传、私有题库查询与填写，保留贡献者鸣谢。
 // @match        *://*.chaoxing.com/*
 // @match        *://*/mycourse/*
@@ -27,7 +27,7 @@
 // https://github.com/ltxhhz/getChaoXingTopic/blob/master/export2.js
 (() => {
   "use strict";
-  const VERSION = "0.2.2";
+  const VERSION = "0.2.3";
   const TYPE_NAMES = { single: "单选", multiple: "多选", judgement: "判断" };
   const HOST_ID = "onlinecourse-chaoxing-panel";
   const STORAGE_KEY = "onlinecourse-chaoxing-v1";
@@ -358,9 +358,32 @@
               if (response.finalUrl && new URL(response.finalUrl).origin !== new URL(config.baseURL).origin) fail("后端发生跨域重定向，请使用最终后端地址");
               if (response.status === 401) { const error = new Error("Token 无效，请修改设置；本次操作已停止"); error.status = 401; throw error; }
               if (response.status < 200 || response.status >= 300) {
-                let code = "", requestID = "";
-                try { const result = JSON.parse(response.responseText); code = result.error?.code || ""; requestID = result.error?.request_id || ""; } catch { /* Non-JSON proxy error. */ }
-                fail(`接口 ${path} 返回 HTTP ${response.status}${code ? ` / ${code}` : ""}${requestID ? ` / request_id=${requestID}` : ""}`);
+                let code = "", requestID = "", detail = "";
+                try {
+                  const result = JSON.parse(response.responseText);
+                  code = String(result.error?.code || "");
+                  requestID = String(result.error?.request_id || "");
+                  if (typeof result.error?.message === "string") detail = result.error.message.slice(0, 1000);
+                } catch { /* Non-JSON proxy error. */ }
+                const redact = (value) => value.split(config.token).join("[Token已隐藏]");
+                const indexMatch = /questions\[(\d+)\]/u.exec(detail);
+                const description = detail.replace(/questions\[(\d+)\]/gu, (field, index) => `本批第 ${Number(index) + 1} 题（${field}）`);
+                let message = `接口 ${path} 返回 HTTP ${response.status}`;
+                if (code) message += ` / ${code}`;
+                if (description) message += ` / ${description}`;
+                if (requestID) message += ` / request_id=${requestID}`;
+                const sendsJudgement = data?.type === "judgement" || data?.questions?.some((question) => question.type === "judgement");
+                if (response.status === 400 && code === "validation_error" && sendsJudgement && /single/u.test(detail) && /multiple/u.test(detail) && !/judgement/u.test(detail)) {
+                  message += " / 当前后端未支持判断题，请更新后端服务并重启后重试";
+                }
+                const error = new Error(redact(message));
+                error.status = response.status;
+                error.code = redact(code);
+                error.requestID = redact(requestID);
+                error.detail = redact(detail);
+                const questionIndex = indexMatch ? Number(indexMatch[1]) : -1;
+                if (questionIndex >= 0 && questionIndex < (data?.questions?.length || 0)) error.question = data.questions[questionIndex];
+                throw error;
               }
               finish(null, JSON.parse(response.responseText));
             } catch (error) { finish(error); }
@@ -419,6 +442,7 @@
     const site = stored.sites?.[origin] || {};
     let snapshot = { questions: [], issues: [], documents: 0 };
     let busy = false, controller = null;
+    let lastError = null;
     const resultRows = new Map();
     const el = (tag, value, className) => {
       const node = doc.createElement(tag);
@@ -594,7 +618,7 @@
     stop.addEventListener("click", () => { controller?.abort(); message("已请求停止，正在结束当前题目操作。", "warn"); });
     diagnostics.addEventListener("click", () => {
       try {
-        const report = { version: VERSION, url: sourceURL(doc.URL), documents: snapshot.documents, issues: snapshot.issues, selectors: validateSelectors(selectorInput.value, doc), detectedCourseID: detected.externalID, questionCount: snapshot.questions.length, examples: snapshot.questions.slice(0, 3).map((question) => ({ ...payload(question), source_url: question.source_url })) };
+        const report = { version: VERSION, url: sourceURL(doc.URL), documents: snapshot.documents, issues: snapshot.issues, selectors: validateSelectors(selectorInput.value, doc), detectedCourseID: detected.externalID, questionCount: snapshot.questions.length, lastError, examples: snapshot.questions.slice(0, 3).map((question) => ({ ...payload(question), source_url: question.source_url })) };
         GM_setClipboard(JSON.stringify(report, null, 2), "text");
         message("诊断信息已复制，包含前 3 题样本，不包含 Token 和用户名。", "success");
       } catch { message("复制诊断失败，请先检查选择器配置。", "error"); }
@@ -602,6 +626,7 @@
 
     async function run(action) {
       if (busy) return;
+      lastError = null;
       try {
         const config = readSettings();
         cacheConnection();
@@ -655,6 +680,7 @@
       } catch (error) {
         const stopped = error.name === "AbortError";
         const value = stopped ? "操作已停止；已完成的上传或填写保留。" : error.message;
+        if (!stopped) lastError = { action, status: error.status, code: error.code, request_id: error.requestID, message: value, question: error.question };
         message(value, stopped ? "warn" : "error"); log("操作", value, stopped ? "warn" : "error");
         if (error.status === 401) settings.open = true;
       } finally { busyState(false); controller = null; }

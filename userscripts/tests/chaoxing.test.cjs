@@ -218,6 +218,40 @@ test('GM transport sends Token only to configured backend, rejects redirects and
   assert.throws(() => core.connection('http://127.0.0.1', ''));
 });
 
+test('upload errors show the backend validation reason and failing question without exposing Token', async () => {
+  const config = core.connection('https://bank.example', 'TEST-SECRET');
+  const questions = Array.from({ length: 11 }, (_, index) => ({ type: index === 10 ? 'judgement' : 'single', stem: `题目 ${index + 1}` }));
+  const reply = message => options => {
+    queueMicrotask(() => options.onload({ status: 400, responseText: JSON.stringify({ error: {
+      code: 'validation_error', message, request_id: 'validation-request-123',
+    } }) }));
+    return { abort() {} };
+  };
+  await assert.rejects(
+    core.request(reply('questions[10]: type 仅支持 single 或 multiple'), config, 'POST', '/questions/batch', { questions }),
+    error => {
+      assert.equal(error.status, 400);
+      assert.equal(error.code, 'validation_error');
+      assert.equal(error.requestID, 'validation-request-123');
+      assert(error.message.includes('本批第 11 题'));
+      assert(error.message.includes('type 仅支持 single 或 multiple'));
+      assert(error.message.includes('更新后端服务'));
+      assert.equal(error.question, questions[10]);
+      return true;
+    },
+  );
+  await assert.rejects(
+    core.request(reply('questions[10]: 选项重复 TEST-SECRET'), config, 'POST', '/questions/batch', { questions }),
+    error => {
+      assert(error.message.includes('选项重复'));
+      assert(!error.message.includes('TEST-SECRET'));
+      assert(!error.detail.includes('TEST-SECRET'));
+      assert(!error.message.includes('更新后端服务'));
+      return true;
+    },
+  );
+});
+
 test('runtime panel boots without network and diagnostics/GM storage contain no accidental DOM Token leak', async () => {
   const dom = fixture(); const window = dom.window;
   let shadow;

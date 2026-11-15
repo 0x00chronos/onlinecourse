@@ -326,6 +326,25 @@ func TestEmbeddedFrontendAndTokenRedaction(t *testing.T) {
 	}
 }
 
+func TestValidationLogsContainReasonAndRequestID(t *testing.T) {
+	store, cfg, _ := setup(t)
+	var logs bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&logs, nil))
+	h := httpapi.New(store, cfg, log)
+	id := course(t, h)
+	question := single()
+	question.Type = "unsupported"
+	w := request(t, h, "POST", "/api/v1/questions/batch", uploadInput(id, question), nil)
+	requireStatus(t, w, 400)
+	output := logs.String()
+	if !strings.Contains(output, w.Header().Get("X-Request-ID")) || !strings.Contains(output, "component=validation") || !strings.Contains(output, "questions[0]") {
+		t.Fatal("validation log did not identify the request and failing field", output)
+	}
+	if strings.Contains(output, cfg.APIKey) {
+		t.Fatal("validation log exposed Token")
+	}
+}
+
 func TestConcurrentDeduplication(t *testing.T) {
 	store, _, _ := setup(t)
 	c, _, err := store.CreateCourse(context.Background(), bank.CourseInput{Platform: "测试", Name: "并发测试"})
