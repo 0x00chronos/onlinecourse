@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         超星 MOOC · 私有题库采集与填写
 // @namespace    onlinecourse.local
-// @version      0.1.0
-// @description  单选/多选采集、可见正确答案上传、私有题库查询与填写，保留贡献者鸣谢。
+// @version      0.2.0
+// @description  单选/多选/判断题采集、可见正确答案上传、私有题库查询与填写，保留贡献者鸣谢。
 // @match        *://*.chaoxing.com/*
 // @match        *://*/mycourse/*
 // @match        *://*/mooc-ans/*
@@ -27,14 +27,15 @@
 // https://github.com/ltxhhz/getChaoXingTopic/blob/master/export2.js
 (() => {
   "use strict";
-  const VERSION = "0.1.0";
+  const VERSION = "0.2.0";
+  const TYPE_NAMES = { single: "单选", multiple: "多选", judgement: "判断" };
   const HOST_ID = "onlinecourse-chaoxing-panel";
   const STORAGE_KEY = "onlinecourse-chaoxing-v1";
   const SELECTORS = {
     roots: [".questionLi", ".TiMu", ".singleQuesId"],
     stem: [".mark_name", ".Zy_TItle .fontLabel", ".Zy_Title .fontLabel", ".Zy_TItle .clearfix", ".Zy_TItle > div", ".newZy_TItle .fontLabel", ".Zy_TItle", ".Zy_Title", ":scope > h3", ".question-title"],
-    options: [".stem_answer .answerBg", ".answerBg", "ul.Zy_ulTop > li", "ul li:has(label.after)", ".option-item"],
-    optionText: [".answer_p", "label.after", ".after", ".option-content", ".option-text", "a"],
+    options: [".stem_answer .answerBg", ".answerBg", "ul.Zy_ulTop > li", "ul li:has(label.after)", "ul li:has(input[type='radio'])", ".option-item"],
+    optionText: [".answer_p", "label.after", ".after", "label:not(.before)", ".option-content", ".option-text", "a"],
     correctAnswer: [".correctAnswer .answerCon", ".correctAnswer", ".Py_answer > span", ".Py_answer", ".correct-answer", ".rightAnswer"],
     courseName: [".c-header .headerwrap h1", "#courseName", "#coursename", ".courseName", ".course-name", ".course_name", "input[name='courseName']"],
     username: ["#currentUserName", "#userName", ".userName", ".username", ".user-name", ".userInfo .name", ".head_name", "[data-user-name]"],
@@ -42,6 +43,13 @@
   const TYPE_SELECTOR = "input[id^='answertype'],input[name^='answertype'],input[name^='type']:not([name='type']),[data-question-type]";
   const PRIVATE_SOURCE_KEYS = new Set(["courseid", "clazzid", "classid", "workid", "knowledgeid", "jobid", "id", "examid", "paperid"]);
   const normalize = (value) => String(value ?? "").normalize("NFC").replace(/\s+/gu, " ").trim();
+  function judgementText(value) {
+    const label = normalize(value).toLowerCase().replace(/\ufe0f/gu, "")
+      .replace(/^[a-z](?:[.．、:：)）]\s*|\s+)/u, "");
+    if (["正确", "对", "是", "√", "✓", "✔", "✅", "true", "t", "1"].includes(label)) return "正确";
+    if (["错误", "错", "否", "×", "✕", "✖", "✗", "✘", "❌", "false", "f", "0"].includes(label)) return "错误";
+    return "";
+  }
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   function fail(message) { throw new Error(message); }
   function selectorList(custom, key) {
@@ -78,7 +86,7 @@
     let result = normalize(value);
     for (let i = 0; i < 3; i++) {
       result = result.replace(/^\d+\s*[.．、)）]\s*/u, "")
-        .replace(/^[【[(（]\s*(?:单选|多选|单项选择|多项选择)题[^】\])）]*[】\])）]\s*/u, "");
+        .replace(/^[【[(（]\s*(?:单选|多选|判断|单项选择|多项选择)题[^】\])）]*[】\])）]\s*/u, "");
     }
     return normalize(result.replace(/[（(]\s*\d+(?:\.\d+)?\s*分\s*[）)]\s*$/u, ""));
   }
@@ -146,10 +154,12 @@
       const value = normalize(metadata.value || metadata.getAttribute("data-question-type"));
       if (["0", "single", "单选题"].includes(value)) return "single";
       if (["1", "multiple", "多选题"].includes(value)) return "multiple";
+      if (["2", "judgement", "judgment", "判断题"].includes(value)) return "judgement";
       if (value !== "") return null;
     }
     const heading = normalize(text(first(root, [".Zy_TItle", ".newZy_TItle", "h3", ".question-title"])));
-    if (/(?:判断|填空|简答|论述|连线|阅读理解)题/u.test(heading)) return null;
+    if (/(?:填空|简答|论述|连线|阅读理解)题/u.test(heading)) return null;
+    if (/判断题/u.test(heading)) return "judgement";
     if (/(?:多选|多项选择)题/u.test(heading)) return "multiple";
     if (/(?:单选|单项选择)题/u.test(heading)) return "single";
     if (root.querySelector("input[type='checkbox']")) return "multiple";
@@ -157,9 +167,16 @@
     return null;
   }
   function parseChoiceAnswer(value, options, type) {
-    let answer = String(value || "").trim();
+    let answer = String(value ?? "").trim();
     const labelled = /(?:正确答案|参考答案)\s*[:：]\s*([\s\S]*?)(?=(?:我的答案|您的答案|你的答案|答案解析|解析|得分|评分)\s*[:：]?|$)/u.exec(answer);
     if (labelled) answer = labelled[1].trim();
+    if (type === "judgement") {
+      const meaning = judgementText(answer);
+      if (meaning) {
+        const option = options.find((item) => judgementText(item.text) === meaning);
+        return option ? [option.key] : [];
+      }
+    }
     const exact = options.find((option) => normalize(option.text) === normalize(answer));
     const letters = /^[A-Z](?:[\s,，、;；|/]*[A-Z])*$/iu.test(answer) ? answer.toUpperCase().replace(/[^A-Z]/gu, "").split("") : [];
     let keys;
@@ -169,7 +186,7 @@
       const pieces = answer.split(/[\n;；|]+/u).map(normalize).filter(Boolean);
       keys = pieces.map((piece) => options.find((option) => normalize(option.text) === piece)?.key);
     }
-    if (!keys.length || keys.some((key) => !options.some((option) => option.key === key)) || new Set(keys).size !== keys.length || (type === "single" && keys.length !== 1)) return [];
+    if (!keys.length || keys.some((key) => !options.some((option) => option.key === key)) || new Set(keys).size !== keys.length || (type !== "multiple" && keys.length !== 1)) return [];
     return options.filter((option) => keys.includes(option.key)).map((option) => option.key);
   }
   function correctAnswers(root, options, type, custom) {
@@ -189,7 +206,7 @@
   }
   function extractQuestion(root, custom = {}) {
     const type = questionType(root);
-    if (!type) fail("不支持或无法确认题型，仅采集单选和多选");
+    if (!type) fail("不支持或无法确认题型，仅采集单选、多选和判断题");
     const stemNode = first(root, selectorList(custom, "stem"));
     if (!stemNode) fail("未找到题干");
     const rows = (() => {
@@ -200,6 +217,7 @@
       return [];
     })();
     if (rows.length < 2 || rows.length > 26) fail("选项数量不在 2–26 范围");
+    if (type === "judgement" && rows.length !== 2) fail("判断题必须包含两个选项");
     const optionNodes = rows.map((row) => first(row, selectorList(custom, "optionText")) || row);
     if ([stemNode, ...rows].some((node) => node.matches(".font-cxsecret") || node.querySelector(".font-cxsecret,img,svg,canvas,math,.katex,.MathJax"))) fail("题干/选项含图片、公式或 font-cxsecret 字体，当前版本跳过");
     const stem = cleanStem(text(stemNode));
@@ -209,7 +227,12 @@
       const label = normalize(row.querySelector(".before,.option-key")?.textContent);
       const explicit = normalize(row.getAttribute("data-option-key") || input?.value || "");
       const key = /^[A-Z]$/iu.test(label) ? label.toUpperCase() : /^[A-Z]$/iu.test(explicit) ? explicit.toUpperCase() : String.fromCharCode(65 + index);
-      const content = normalize(text(optionNodes[index]).replace(new RegExp(`^\\s*${key}[.．、:：)）]\\s*`, "u"), ""));
+      let content = normalize(text(optionNodes[index]).replace(new RegExp(`^\\s*${key}[.．、:：)）]\\s*`, "u"), ""));
+      if (type === "judgement") {
+        const meaning = judgementText(content);
+        content = meaning || ((!content || content === key) ? judgementText(input?.value) : "");
+        if (!content) fail("无法识别判断选项的正确/错误含义");
+      }
       if (!content || [...content].length > 5000) fail("选项文本为空或超过 5000 字");
       return { key, text: content, row, input, target: optionNodes[index] };
     });
@@ -260,12 +283,13 @@
     if (result.data.conflict || result.data.answer_candidates?.length !== 1) fail("题库答案存在冲突，跳过填写");
     const candidate = result.data.answer_candidates[0];
     const keys = candidate.answer_keys;
-    if (!Array.isArray(keys) || !keys.length || new Set(keys).size !== keys.length || (question.type === "single" && keys.length !== 1)) fail("题库返回的答案编号不合法");
+    if (!Array.isArray(keys) || !keys.length || new Set(keys).size !== keys.length || (question.type !== "multiple" && keys.length !== 1)) fail("题库返回的答案编号不合法");
     if (result.data.type !== question.type || normalize(result.data.stem) !== question.stem) fail("题库返回的题型或题干不一致");
     if (!Array.isArray(candidate.answer_texts) || candidate.answer_texts.length !== keys.length) fail("题库返回的答案文本不完整");
     keys.forEach((key, index) => {
       const option = question.options.find((item) => item.key === key);
-      if (!option || normalize(candidate.answer_texts[index]) !== option.text) fail("题库答案与当前选项不一致");
+      const answerText = question.type === "judgement" ? judgementText(candidate.answer_texts[index]) : normalize(candidate.answer_texts[index]);
+      if (!option || answerText !== option.text) fail("题库答案与当前选项不一致");
     });
     return candidate;
   }
@@ -469,7 +493,7 @@
     const list = el("div", undefined, "list");
     const logDetails = el("details"); logDetails.append(el("summary", "操作日志"));
     const logs = el("pre", "", "logs"); logDetails.append(logs);
-    body.append(status, settings, actions, utility, list, logDetails, el("p", "仅处理当前已加载的单选/多选。答案冲突会跳过；不操作交卷或页面导航。", "foot"));
+    body.append(status, settings, actions, utility, list, logDetails, el("p", "支持当前已加载的单选、多选和判断题，填写结果可在题目预览中核对。", "foot"));
     panel.append(header, body); shadow.append(style, panel);
 
     function log(component, message, level = "info") {
@@ -515,7 +539,7 @@
       list.replaceChildren(); resultRows.clear();
       snapshot.questions.forEach((question, index) => {
         const row = el("div", undefined, "question");
-        row.append(el("strong", `${index + 1}. [${question.type === "single" ? "单选" : "多选"}] ${question.stem}`));
+        row.append(el("strong", `${index + 1}. [${TYPE_NAMES[question.type]}] ${question.stem}`));
         row.append(el("p", question.options.map((option) => `${option.key}. ${option.text}`).join(" / "), "preview"));
         const result = el("p", question.correct_answers.length ? `页面可见正确答案：${question.correct_answers.join("、")}` : "已采集题目，未发现明确可见的正确答案", "preview");
         row.append(result); resultRows.set(question, result); list.append(row);
@@ -523,7 +547,7 @@
       for (const issue of snapshot.issues) log("适配", `${issue.index ? `第 ${issue.index} 个容器：` : ""}${issue.reason}`, "warn");
       const answered = snapshot.questions.filter((question) => question.correct_answers.length).length;
       message(`识别 ${snapshot.questions.length} 题 · 可见正确答案 ${answered} 题 · 提示 ${snapshot.issues.length} 项`);
-      log("扫描", `已扫描 ${snapshot.documents} 个文档，识别 ${snapshot.questions.length} 道单选/多选题`);
+      log("扫描", `已扫描 ${snapshot.documents} 个文档，识别 ${snapshot.questions.length} 道单选/多选/判断题`);
       return snapshot.questions;
     }
     save.addEventListener("click", () => {

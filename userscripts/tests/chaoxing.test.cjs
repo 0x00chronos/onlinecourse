@@ -240,3 +240,32 @@ test('runtime panel boots without network and diagnostics/GM storage contain no 
   assert(diagnostic.includes('questionCount')); assert(!diagnostic.includes('TEST-SECRET')); assert(!diagnostic.includes('小明'));
   dom.window.close();
 });
+
+test('judgement: parse aliases, collect correct answers and fill native/custom controls', async () => {
+  const dom = fixture('judgement');
+  customClicks(dom.window.document);
+  const result = core.scan(dom.window.document);
+  assert.equal(result.questions.length, 2);
+  assert.equal(result.issues.length, 0);
+  const yes = result.questions.find(question => question.root.id === 'judgement-true');
+  const no = result.questions.find(question => question.root.id === 'judgement-false');
+  assert.equal(yes.type, 'judgement');
+  assert.equal(yes.stem, 'Go 支持垃圾回收。');
+  assert.deepEqual(yes.options.map(option => option.text), ['正确', '错误']);
+  assert.deepEqual(yes.correct_answers, ['A']);
+  assert.deepEqual(no.correct_answers, ['B']);
+  for (const alias of ['正确', '对', '√', '✓', 'true', 'T', '1']) {
+    assert.deepEqual(core.parseChoiceAnswer(alias, yes.options, 'judgement'), ['A']);
+  }
+  for (const alias of ['错误', '错', '×', '✗', 'false', 'F', '0']) {
+    assert.deepEqual(core.parseChoiceAnswer(alias, no.options, 'judgement'), ['B']);
+  }
+  assert.deepEqual(core.parseChoiceAnswer('AC', no.options, 'judgement'), []);
+  await core.fillQuestion(yes, resultFor(yes, ['A']), { delay: 0 });
+  await core.fillQuestion(no, resultFor(no, ['B']), { delay: 0 });
+  assert.deepEqual(yes.options.map(core.selected), [true, false]);
+  assert.deepEqual(no.options.map(core.selected), [false, true]);
+  const bad = resultFor(no, ['A', 'B']);
+  await assert.rejects(core.fillQuestion(no, bad, { delay: 0 }), /不合法/);
+  dom.window.close();
+});

@@ -353,3 +353,60 @@ func TestConcurrentDeduplication(t *testing.T) {
 		t.Fatalf("concurrent duplicate data: %d questions, %d contributions", questions, contributions)
 	}
 }
+
+func TestJudgementUploadSearchAndValidation(t *testing.T) {
+	store, cfg, log := setup(t)
+	h := httpapi.New(store, cfg, log)
+	id := course(t, h)
+	question := bank.QuestionInput{
+		Type: "judgement", Stem: "Go 不支持垃圾回收。",
+		Options:        []bank.Option{{Key: "A", Text: "√"}, {Key: "B", Text: "×"}},
+		CorrectAnswers: []string{"B"},
+	}
+	requireStatus(t, request(t, h, "POST", "/api/v1/questions/batch", uploadInput(id, question), nil), 200)
+	lookup := bank.SearchInput{
+		CourseID: id, Type: "judgement", Stem: question.Stem,
+		Options: []bank.Option{{Key: "Y", Text: "false"}, {Key: "X", Text: "true"}},
+	}
+	w := request(t, h, "POST", "/api/v1/questions/search", lookup, nil)
+	requireStatus(t, w, 200)
+	result := decode[struct {
+		Match string
+		Data  bank.QuestionView
+	}](t, w)
+	if result.Match != "exact" || !result.Data.HasAnswer || result.Data.Conflict {
+		t.Fatal(w.Body.String())
+	}
+	answer := result.Data.AnswerCandidates[0]
+	if len(answer.AnswerKeys) != 1 || answer.AnswerKeys[0] != "Y" || answer.AnswerTexts[0] != "false" {
+		t.Fatal("judgement aliases or option remapping failed", w.Body.String())
+	}
+	question.Options = []bank.Option{{Key: "P", Text: "正确"}, {Key: "Q", Text: "错误"}}
+	question.CorrectAnswers = []string{"Q"}
+	w = request(t, h, "POST", "/api/v1/questions/batch", uploadInput(id, question), nil)
+	requireStatus(t, w, 200)
+	counts := decode[struct {
+		NewQuestions     int `json:"new_questions"`
+		NewContributions int `json:"new_contributions"`
+	}](t, w)
+	if counts.NewQuestions != 0 || counts.NewContributions != 0 {
+		t.Fatal("equivalent judgement labels created duplicates")
+	}
+	w = request(t, h, "GET", fmt.Sprintf("/api/v1/questions?course_id=%d&type=judgement", id), nil, nil)
+	requireStatus(t, w, 200)
+	if decode[struct{ Total int }](t, w).Total != 1 {
+		t.Fatal(w.Body.String())
+	}
+	for _, options := range [][]bank.Option{
+		{{Key: "A", Text: "正确"}, {Key: "B", Text: "true"}},
+		{{Key: "A", Text: "正确"}, {Key: "B", Text: "未知"}},
+		{{Key: "A", Text: "正确"}, {Key: "B", Text: "错误"}, {Key: "C", Text: "对"}},
+	} {
+		invalid := question
+		invalid.Options = options
+		invalid.CorrectAnswers = nil
+		requireStatus(t, request(t, h, "POST", "/api/v1/questions/batch", uploadInput(id, invalid), nil), 400)
+	}
+	question.CorrectAnswers = []string{"P", "Q"}
+	requireStatus(t, request(t, h, "POST", "/api/v1/questions/batch", uploadInput(id, question), nil), 400)
+}

@@ -179,8 +179,8 @@ func (a *API) listQuestions(w http.ResponseWriter, r *http.Request) {
 		db = db.Where("course_id = ?", id)
 	}
 	if kind := r.URL.Query().Get("type"); kind != "" {
-		if kind != "single" && kind != "multiple" {
-			a.fail(w, r, 400, "validation_error", "type 仅支持 single 或 multiple")
+		if kind != "single" && kind != "multiple" && kind != "judgement" {
+			a.fail(w, r, 400, "validation_error", "type 仅支持 single、multiple 或 judgement")
 			return
 		}
 		db = db.Where("type = ?", kind)

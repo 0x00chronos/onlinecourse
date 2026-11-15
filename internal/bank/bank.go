@@ -95,6 +95,22 @@ func bounded(s string, max int) bool {
 	return s != "" && utf8.ValidString(s) && utf8.RuneCountInString(s) <= max
 }
 
+// Judgement options share one meaning across platform labels and languages.
+func optionText(kind, value string) string {
+	value = Normalize(value)
+	if kind != "judgement" {
+		return value
+	}
+	switch strings.ToLower(strings.ReplaceAll(value, "\ufe0f", "")) {
+	case "正确", "对", "是", "√", "✓", "✔", "✅", "true", "t", "1":
+		return "正确"
+	case "错误", "错", "否", "×", "✕", "✖", "✗", "✘", "❌", "false", "f", "0":
+		return "错误"
+	default:
+		return ""
+	}
+}
+
 func (s *Store) CreateCourse(ctx context.Context, in CourseInput) (model.Course, bool, error) {
 	in.Platform, in.Name, in.ExternalID = Normalize(in.Platform), Normalize(in.Name), Normalize(in.ExternalID)
 	if !bounded(in.Platform, 100) || !bounded(in.Name, 300) || utf8.RuneCountInString(in.ExternalID) > 200 {
@@ -118,18 +134,24 @@ func (s *Store) CreateCourse(ctx context.Context, in CourseInput) (model.Course,
 }
 
 func normalizeQuestion(in QuestionInput) (model.Question, []string, error) {
-	if in.Type != "single" && in.Type != "multiple" {
-		return model.Question{}, nil, invalid("type 仅支持 single 或 multiple")
+	if in.Type != "single" && in.Type != "multiple" && in.Type != "judgement" {
+		return model.Question{}, nil, invalid("type 仅支持 single、multiple 或 judgement")
 	}
 	stem := Normalize(in.Stem)
 	if !bounded(stem, 10000) || len(in.Options) < 2 || len(in.Options) > 26 {
 		return model.Question{}, nil, invalid("stem 必填且最多 10000 字；选项数量必须为 2–26")
 	}
+	if in.Type == "judgement" && len(in.Options) != 2 {
+		return model.Question{}, nil, invalid("判断题必须包含正确和错误两个选项")
+	}
 	options := make([]Option, len(in.Options))
 	keys, texts := map[string]string{}, map[string]bool{}
 	canonical := make([]string, len(in.Options))
 	for i, opt := range in.Options {
-		opt.Key, opt.Text = strings.TrimSpace(opt.Key), Normalize(opt.Text)
+		opt.Key, opt.Text = strings.TrimSpace(opt.Key), optionText(in.Type, opt.Text)
+		if in.Type == "judgement" && opt.Text == "" {
+			return model.Question{}, nil, invalid("判断题选项必须能识别为正确或错误")
+		}
 		if !bounded(opt.Key, 32) || !bounded(opt.Text, 5000) {
 			return model.Question{}, nil, invalid("选项 key/text 必填且长度分别不能超过 32/5000")
 		}
@@ -142,8 +164,8 @@ func normalizeQuestion(in QuestionInput) (model.Question, []string, error) {
 		keys[opt.Key], texts[opt.Text] = opt.Text, true
 		options[i], canonical[i] = opt, opt.Text
 	}
-	if in.Type == "single" && len(in.CorrectAnswers) > 1 {
-		return model.Question{}, nil, invalid("单选题最多一个正确答案")
+	if in.Type != "multiple" && len(in.CorrectAnswers) > 1 {
+		return model.Question{}, nil, invalid("单选题和判断题最多一个正确答案")
 	}
 	answers := make([]string, 0, len(in.CorrectAnswers))
 	seen := map[string]bool{}
@@ -254,7 +276,7 @@ func View(q model.Question, currentOptions []Option) (QuestionView, error) {
 	v := QuestionView{ID: q.ID, CourseID: q.CourseID, Type: q.Type, Stem: q.Stem, Options: options, CreatedAt: q.CreatedAt, AnswerCandidates: []AnswerCandidate{}, Contributors: []Attribution{}}
 	byText := map[string]Option{}
 	for _, opt := range options {
-		byText[Normalize(opt.Text)] = opt
+		byText[optionText(q.Type, opt.Text)] = opt
 	}
 	groups := map[string]*AnswerCandidate{}
 	supporters := map[string]map[string]bool{}
@@ -280,7 +302,7 @@ func View(q model.Question, currentOptions []Option) (QuestionView, error) {
 				answerSet[answer] = true
 			}
 			for _, opt := range options {
-				if answerSet[Normalize(opt.Text)] {
+				if answerSet[optionText(q.Type, opt.Text)] {
 					g.AnswerKeys = append(g.AnswerKeys, opt.Key)
 					g.AnswerTexts = append(g.AnswerTexts, opt.Text)
 				}

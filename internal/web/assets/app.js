@@ -10,6 +10,7 @@
     questionPage: 1, questionTotal: 0, courseQuery: "", questionQuery: "", type: "",
     courseRequest: null, questionRequest: null, courseSequence: 0, questionSequence: 0,
     coursesLoading: false, questionsLoading: false,
+    manualUsername: "", manualRequests: new Set(),
   };
 
   function element(tag, className, text) {
@@ -45,6 +46,9 @@
     state.questionSequence++;
     state.courseRequest?.abort();
     state.questionRequest?.abort();
+    for (const controller of state.manualRequests) controller.abort();
+    state.manualRequests.clear();
+    state.manualUsername = "";
     state.coursesLoading = false;
     state.questionsLoading = false;
     state.token = "";
@@ -64,14 +68,18 @@
     $("toggle-token").setAttribute("aria-pressed", "false");
     $("toggle-token").setAttribute("aria-label", "显示 Token");
     alertMessage("app-error");
+    alertMessage("app-success");
     alertMessage("login-error", message);
     $("token").focus();
   }
 
-  async function api(path, signal) {
+  async function api(path, signal, options = {}) {
     const token = state.token;
+    const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
+    if (options.body !== undefined) headers["Content-Type"] = "application/json";
     const response = await fetch(`/api/v1${path}`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      method: options.method || "GET", headers,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
       credentials: "omit", cache: "no-store", signal,
     });
     let result;
@@ -254,7 +262,8 @@
     const top = element("div", "question-card-top");
     const labels = element("div", "question-card-labels");
     labels.append(element("span", "question-index", String((state.questionPage - 1) * QUESTION_SIZE + index + 1).padStart(2, "0")));
-    labels.append(element("span", `badge ${question.type === "multiple" ? "badge-multiple" : "badge-type"}`, question.type === "multiple" ? "多选题" : "单选题"));
+    const typeNames = { single: "单选题", multiple: "多选题", judgement: "判断题" };
+    labels.append(element("span", `badge ${question.type === "multiple" ? "badge-multiple" : "badge-type"}`, typeNames[question.type] || "未知题型"));
     labels.append(element("span", `badge ${question.conflict ? "badge-conflict" : question.has_answer ? "badge-answer" : "badge-unknown"}`, question.conflict ? "答案有分歧" : question.has_answer ? "有参考答案" : "暂无答案"));
     top.append(labels, element("span", "question-id", `#${question.id}`));
     card.append(top, element("h3", "", question.stem));
@@ -280,6 +289,7 @@
       section.append(group);
     });
     card.append(section);
+    card.append(answerEditor(question, index, card));
     if (question.contributors.length) {
       const details = element("details", "sources");
       details.append(element("summary", "", `查看来源与贡献记录（${question.contributors.length}）`));
@@ -303,6 +313,122 @@
     return card;
   }
 
+  function answerEditor(question, index, card) {
+    const section = element("section", "manual-answer");
+    const toggle = element("button", "button button-small", "设置答案");
+    toggle.type = "button";
+    toggle.setAttribute("aria-expanded", "false");
+    const form = element("form", "manual-answer-form");
+    form.hidden = true;
+    const formID = `manual-answer-${question.id}`;
+    form.id = formID;
+    toggle.setAttribute("aria-controls", formID);
+    const choices = element("fieldset", "manual-answer-choices");
+    choices.append(element("legend", "", "选择正确答案"));
+    const selectedKeys = new Set(question.has_answer && !question.conflict ? question.answer_candidates[0].answer_keys : []);
+    const inputs = [];
+    for (const option of question.options) {
+      const label = element("label", "manual-answer-option");
+      const input = element("input");
+      input.type = question.type === "multiple" ? "checkbox" : "radio";
+      input.name = formID;
+      input.value = option.key;
+      input.checked = selectedKeys.has(option.key);
+      label.append(input, element("span", "", `${option.key} · ${option.text}`));
+      choices.append(label);
+      inputs.push(input);
+    }
+    const authorLabel = element("label", "manual-answer-author", "贡献者署名");
+    const author = element("input");
+    author.type = "text";
+    author.value = state.manualUsername;
+    author.maxLength = 100;
+    author.required = true;
+    author.autocomplete = "off";
+    author.placeholder = "输入用户名";
+    authorLabel.append(author);
+    const feedback = element("p", "form-error");
+    feedback.setAttribute("role", "alert");
+    feedback.hidden = true;
+    const actions = element("div", "manual-answer-actions");
+    const save = element("button", "button button-primary button-small", "保存答案");
+    save.type = "submit";
+    const cancel = element("button", "button button-small", "取消");
+    cancel.type = "button";
+    actions.append(save, cancel);
+    form.append(choices, authorLabel, element("p", "manual-answer-note", "保存为带署名的答案贡献，不同答案会显示冲突供核对。"), feedback, actions);
+    section.append(toggle, form);
+
+    function close() {
+      form.hidden = true;
+      toggle.setAttribute("aria-expanded", "false");
+      toggle.focus();
+    }
+    toggle.addEventListener("click", () => {
+      form.hidden = !form.hidden;
+      toggle.setAttribute("aria-expanded", String(!form.hidden));
+      if (!form.hidden) inputs[0]?.focus();
+    });
+    cancel.addEventListener("click", close);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (save.disabled) return;
+      const correctAnswers = inputs.filter(input => input.checked).map(input => input.value);
+      const username = author.value.normalize("NFC").replace(/\s+/gu, " ").trim();
+      if (!correctAnswers.length || !username) {
+        feedback.textContent = "请选择答案并填写贡献者署名。";
+        feedback.hidden = false;
+        return;
+      }
+      save.disabled = true;
+      cancel.disabled = true;
+      toggle.disabled = true;
+      choices.disabled = true;
+      author.disabled = true;
+      save.textContent = "正在保存…";
+      feedback.hidden = true;
+      alertMessage("app-success");
+      const controller = new AbortController();
+      state.manualRequests.add(controller);
+      const token = state.token;
+      const source = new URL("/", window.location.origin);
+      source.searchParams.set("question_id", String(question.id));
+      try {
+        await api("/questions/batch", controller.signal, {
+          method: "POST",
+          body: {
+            course_id: question.course_id,
+            contributor: { username, source_url: source.href },
+            questions: [{ type: question.type, stem: question.stem, options: question.options, correct_answers: correctAnswers }],
+          },
+        });
+        if (state.token !== token) return;
+        state.manualUsername = username;
+        if (!card.isConnected) return;
+        const updated = await api(`/questions/${question.id}`, controller.signal);
+        if (state.token !== token || !card.isConnected) return;
+        card.replaceWith(renderQuestion(updated.data, index));
+        let message = `答案已保存，感谢 ${username} 贡献。`;
+        if (updated.data.conflict) message += "此题存在多组答案，请核对来源。";
+        alertMessage("app-success", message);
+      } catch (error) {
+        if (error.name !== "AbortError" && error.status !== 401) {
+          feedback.textContent = errorMessage(error);
+          feedback.hidden = false;
+        }
+      } finally {
+        state.manualRequests.delete(controller);
+        save.disabled = false;
+        cancel.disabled = false;
+        toggle.disabled = false;
+        choices.disabled = false;
+        author.disabled = false;
+        save.textContent = "保存答案";
+      }
+    });
+    return section;
+  }
+
   async function loadQuestions() {
     if (!state.selected || !state.token) return;
     state.questionRequest?.abort();
@@ -311,6 +437,7 @@
     const sequence = ++state.questionSequence;
     state.questionsLoading = true;
     alertMessage("app-error");
+    alertMessage("app-success");
     $("question-list").setAttribute("aria-busy", "true");
     $("question-list").replaceChildren(element("div", "loading-state", "正在查阅课程题库…"));
     $("question-status").textContent = "正在读取题目…";

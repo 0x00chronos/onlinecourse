@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>题库档案 · 课程与答案查询</title>
-  <meta name="description" content="按课程查阅单选、多选题与参考答案，保留每一份贡献的来源。">
+  <meta name="description" content="按课程查阅单选、多选、判断题与参考答案，记录答案和贡献来源。">
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/app.css">
   <script src="/assets/app.js" defer></script>
@@ -34,7 +34,7 @@
           <div class="archive-line"><span>02</span><strong>题目与答案</strong><em>QUESTIONS</em></div>
           <div class="archive-line"><span>03</span><strong>贡献与来源</strong><em>CONTRIBUTIONS</em></div>
         </div>
-        <div class="welcome-footer"><span class="dot"></span>单选与多选题库 · 来源可追溯</div>
+        <div class="welcome-footer"><span class="dot"></span>单选、多选、判断题 · 来源可追溯</div>
       </div>
       <div class="login-panel">
         <span class="section-label">访问认证</span>
@@ -76,12 +76,13 @@
         <div class="breadcrumb">课程档案 <span aria-hidden="true">/</span> <span id="breadcrumb-course">选择课程</span></div>
         <div class="page-heading"><div><h1 id="course-title">选择一门课程</h1><p id="course-meta" class="muted">从左侧选择课程，查阅题库与参考答案。</p></div><button id="refresh" class="button" type="button"><span aria-hidden="true">↻</span> 刷新</button></div>
         <div id="app-error" class="notice notice-error" role="alert" hidden></div>
+        <div id="app-success" class="notice notice-success" role="status" hidden></div>
         <section class="question-library" aria-labelledby="questions-title">
           <div class="library-heading"><div class="library-title"><h2 id="questions-title">课程题库</h2><span id="question-total" class="count-badge">0</span></div><span class="library-hint">保留原始贡献 · 答案供参考</span></div>
           <form id="question-search-form" class="question-filters" role="search" aria-label="搜索当前课程题目">
             <div class="search-field"><label class="sr-only" for="question-search">题干关键字</label><span aria-hidden="true">⌕</span><input id="question-search" type="search" placeholder="搜索这门课程中的题目…" maxlength="500"></div>
             <label class="sr-only" for="question-type">题目类型</label>
-            <select id="question-type"><option value="">全部题型</option><option value="single">单选题</option><option value="multiple">多选题</option></select>
+            <select id="question-type"><option value="">全部题型</option><option value="single">单选题</option><option value="multiple">多选题</option><option value="judgement">判断题</option></select>
             <button class="button button-primary" type="submit">查询</button>
           </form>
           <div id="question-status" class="results-caption" role="status"></div>
